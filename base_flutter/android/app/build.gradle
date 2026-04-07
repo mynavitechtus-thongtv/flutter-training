@@ -1,0 +1,105 @@
+plugins {
+    id "com.android.application"
+    id "kotlin-android"
+    // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
+    id "dev.flutter.flutter-gradle-plugin"
+    id "com.google.gms.google-services"
+    id "com.google.firebase.crashlytics"
+}
+
+android {
+    namespace = "jp.flutter.app"
+    compileSdk = 36
+    ndkVersion = flutter.ndkVersion
+
+    compileOptions {
+        coreLibraryDesugaringEnabled true
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = 17
+    }
+
+    defaultConfig {
+        applicationId = "jp.flutter.app"
+        minSdk = 26
+        targetSdk = 36
+        versionCode = flutter.versionCode
+        versionName = flutter.versionName
+        multiDexEnabled true
+    }
+
+    signingConfigs {
+        release {
+            if (System.getenv()["CI"]) { // CI=true is exported by Codemagic
+                storeFile file(System.getenv()["CM_KEYSTORE_PATH"])
+                storePassword System.getenv()["CM_KEYSTORE_PASSWORD"]
+                keyAlias System.getenv()["CM_KEY_ALIAS"]
+                keyPassword System.getenv()["CM_KEYSTORE_PASSWORD"]
+            } else {
+                def localProperties = new Properties()
+                def localPropertiesFile = rootProject.file('local.properties')
+                if (localPropertiesFile.exists()) {
+                    localPropertiesFile.withReader('UTF-8') { reader ->
+                        localProperties.load(reader)
+                    }
+                }
+                keyAlias localProperties.getProperty('keystore.keyAlias')
+                keyPassword localProperties.getProperty('keystore.keyPassword')
+                storeFile localProperties.getProperty('keystore.storeFile') ? file(localProperties.getProperty('keystore.storeFile')) : null
+                storePassword localProperties.getProperty('keystore.storePassword')
+            }
+       }
+   }
+
+    buildTypes {
+        release {
+            signingConfig signingConfigs.release
+            // signingConfig signingConfigs.debug
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    flavorDimensions("flavor-type")
+    productFlavors {
+        develop {
+            dimension "flavor-type"
+            applicationId "jp.flutter.app"
+            manifestPlaceholders["host"] = "dev.chatwork.com"
+            manifestPlaceholders["applicationName"] = "Develop"
+        }
+
+        qa {
+            dimension "flavor-type"
+            applicationId "jp.flutter.app"
+            manifestPlaceholders["host"] = "dev.chatwork.com"
+            manifestPlaceholders["applicationName"] = "Qa"
+        }
+
+        staging {
+            dimension "flavor-type"
+            applicationId "jp.flutter.app"
+            manifestPlaceholders["host"] = "stg.facebook.com"
+            manifestPlaceholders["applicationName"] = "Staging"
+        }
+
+        production {
+            dimension "flavor-type"
+            applicationId "jp.flutter.app"
+            manifestPlaceholders["host"] = "chatwork.com"
+            manifestPlaceholders["applicationName"] = "Production"
+        }
+    }
+
+    dependencies {
+        coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.4'
+    }
+}
+
+flutter {
+    source = "../.."
+}

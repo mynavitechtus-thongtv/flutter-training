@@ -1,0 +1,542 @@
+# Env variables:
+# - GOOGLE_PLAY_SERVICE_ACCOUNT_CREDENTIALS - https://docs.codemagic.io/yaml-publishing/google-play/
+# - APP_APPLE_ID_DEV, APP_APPLE_ID_QA, APP_APPLE_ID_STG - https://docs.codemagic.io/knowledge-codemagic/build-versioning/
+# - APP_STORE_CONNECT_PRIVATE_KEY - https://docs.codemagic.io/knowledge-codemagic/build-versioning/
+# - APP_STORE_CONNECT_ISSUER_ID - https://docs.codemagic.io/knowledge-codemagic/build-versioning/
+# - APP_STORE_CONNECT_KEY_IDENTIFIER - https://docs.codemagic.io/knowledge-codemagic/build-versioning/
+# - DART_DEFINES_DEVELOP - Run `base64 -i dart_defines/develop.json | pbcopy`
+# - DART_DEFINES_QA - Run `base64 -i dart_defines/qa.json | pbcopy`
+# - DART_DEFINES_STAGING - Run `base64 -i dart_defines/staging.json | pbcopy`
+# - DART_DEFINES_PRODUCTION - Run `base64 -i dart_defines/production.json | pbcopy`
+# - IOS_FIREBASE_JSON_STAGING
+# - IOS_FIREBASE_JSON_PRODUCTION
+# - ANDROID_FIREBASE_JSON_STAGING
+# - ANDROID_FIREBASE_JSON_PRODUCTION
+# - EMAIL_1 - EMAIL_10
+# - ANDROID_PACKAGE_NAME_DEV, ANDROID_PACKAGE_NAME_QA, ANDROID_PACKAGE_NAME_STG - see definitions.env_config.vars
+definitions:
+  instance_mac_os: &instance_mac_os
+    instance_type: mac_mini_m1
+    max_build_duration: 60
+    cache:
+      cache_paths:
+        - $HOME/.gradle/caches
+        - $HOME/.pub-cache
+        - $HOME/Library/Caches/CocoaPods
+  env_config: &env_config
+    flutter: 3.38.7
+    java: 21
+    xcode: 16.0
+    cocoapods: 1.16.2
+    vars:
+      JAVA_TOOL_OPTIONS: "-Xmx5g"
+      ANDROID_PACKAGE_NAME_DEV: "jp.flutter.app"
+      ANDROID_PACKAGE_NAME_QA: "jp.flutter.app"
+      ANDROID_PACKAGE_NAME_STG: "jp.flutter.app"
+    groups:
+      - secrets
+      - emails
+  scripts:
+    - &force_enable_custom_lint
+      name: Force-enable custom linting
+      script: make tcl force=true
+    - &change_build_number_pubspec_ios_dev
+      name: Change the build number in pubspec.yaml for iOS (develop)
+      script: |
+        LATEST_BUILD_NUMBER=$(app-store-connect get-latest-testflight-build-number "$APP_APPLE_ID_DEV")
+        echo "Latest App Store build number (develop): $LATEST_BUILD_NUMBER"
+        UPDATED_BUILD_NUMBER=$(( LATEST_BUILD_NUMBER + 1 ))
+        echo "🔢 Using build number: $UPDATED_BUILD_NUMBER"
+        dart run ./tools/dart_tools/lib/set_build_number_pubspec.dart $UPDATED_BUILD_NUMBER
+    - &change_build_number_pubspec_ios_qa
+      name: Change the build number in pubspec.yaml for iOS (qa)
+      script: |
+        LATEST_BUILD_NUMBER=$(app-store-connect get-latest-testflight-build-number "$APP_APPLE_ID_QA")
+        echo "Latest App Store build number (qa): $LATEST_BUILD_NUMBER"
+        UPDATED_BUILD_NUMBER=$(( LATEST_BUILD_NUMBER + 1 ))
+        echo "🔢 Using build number: $UPDATED_BUILD_NUMBER"
+        dart run ./tools/dart_tools/lib/set_build_number_pubspec.dart $UPDATED_BUILD_NUMBER
+    - &change_build_number_pubspec_ios_stg
+      name: Change the build number in pubspec.yaml for iOS (staging)
+      script: |
+        LATEST_BUILD_NUMBER=$(app-store-connect get-latest-testflight-build-number "$APP_APPLE_ID_STG")
+        echo "Latest App Store build number (staging): $LATEST_BUILD_NUMBER"
+        UPDATED_BUILD_NUMBER=$(( LATEST_BUILD_NUMBER + 1 ))
+        echo "🔢 Using build number: $UPDATED_BUILD_NUMBER"
+        dart run ./tools/dart_tools/lib/set_build_number_pubspec.dart $UPDATED_BUILD_NUMBER
+    - &change_build_number_pubspec_android_dev
+      name: Change the build number in pubspec.yaml for Android (develop)
+      script: |
+        LATEST_GOOGLE_PLAY_BUILD_NUMBER=$(google-play get-latest-build-number --package-name "$ANDROID_PACKAGE_NAME_DEV")
+        if [ -z "$LATEST_GOOGLE_PLAY_BUILD_NUMBER" ]
+          then
+            echo "No build number found from Google Play, using the build number from the environment variable: $BUILD_NUMBER"
+            UPDATED_BUILD_NUMBER=$BUILD_NUMBER
+          else
+            echo "Latest Google Play build number (develop): $LATEST_GOOGLE_PLAY_BUILD_NUMBER"
+            UPDATED_BUILD_NUMBER=$(( LATEST_GOOGLE_PLAY_BUILD_NUMBER + 1 ))
+        fi
+        echo "🔢 Using build number: $UPDATED_BUILD_NUMBER"
+        dart run ./tools/dart_tools/lib/set_build_number_pubspec.dart $UPDATED_BUILD_NUMBER
+    - &change_build_number_pubspec_android_qa
+      name: Change the build number in pubspec.yaml for Android (qa)
+      script: |
+        LATEST_GOOGLE_PLAY_BUILD_NUMBER=$(google-play get-latest-build-number --package-name "$ANDROID_PACKAGE_NAME_QA")
+        if [ -z "$LATEST_GOOGLE_PLAY_BUILD_NUMBER" ]
+          then
+            echo "No build number found from Google Play, using the build number from the environment variable: $BUILD_NUMBER"
+            UPDATED_BUILD_NUMBER=$BUILD_NUMBER
+          else
+            echo "Latest Google Play build number (qa): $LATEST_GOOGLE_PLAY_BUILD_NUMBER"
+            UPDATED_BUILD_NUMBER=$(( LATEST_GOOGLE_PLAY_BUILD_NUMBER + 1 ))
+        fi
+        echo "🔢 Using build number: $UPDATED_BUILD_NUMBER"
+        dart run ./tools/dart_tools/lib/set_build_number_pubspec.dart $UPDATED_BUILD_NUMBER
+    - &change_build_number_pubspec_android_stg
+      name: Change the build number in pubspec.yaml for Android (staging)
+      script: |
+        LATEST_GOOGLE_PLAY_BUILD_NUMBER=$(google-play get-latest-build-number --package-name "$ANDROID_PACKAGE_NAME_STG")
+        if [ -z "$LATEST_GOOGLE_PLAY_BUILD_NUMBER" ]
+          then
+            echo "No build number found from Google Play, using the build number from the environment variable: $BUILD_NUMBER"
+            UPDATED_BUILD_NUMBER=$BUILD_NUMBER
+          else
+            echo "Latest Google Play build number (staging): $LATEST_GOOGLE_PLAY_BUILD_NUMBER"
+            UPDATED_BUILD_NUMBER=$(( LATEST_GOOGLE_PLAY_BUILD_NUMBER + 1 ))
+        fi
+        echo "🔢 Using build number: $UPDATED_BUILD_NUMBER"
+        dart run ./tools/dart_tools/lib/set_build_number_pubspec.dart $UPDATED_BUILD_NUMBER
+    - &sync
+      name: Run pub get and gen files
+      script: make sync
+    - &install_pods
+      name: Install pods
+      script: cd ios && pod install
+    - &set_up_code_signing_settings_on_xcode_project
+      name: Set up code signing settings on Xcode project
+      script: xcode-project use-profiles
+    - &upload_debug_symbols_to_crashlytics
+      name: Upload debug symbols to Firebase Crashlytics
+      script: |
+        echo "Find build artifacts"
+        dsymPath=$(find $CM_BUILD_DIR/build/ios/archive/Runner.xcarchive -name "*.dSYM" | head -1)
+        if [[ -z ${dsymPath} ]]
+        then
+          echo "No debug symbols were found, skip publishing to Firebase Crashlytics"
+        else
+          echo "Publishing debug symbols from $dsymPath to Firebase Crashlytics"
+          ls -d -- ios/Pods/*
+          $CM_BUILD_DIR/ios/Pods/FirebaseCrashlytics/upload-symbols \
+            -gsp ios/Runner/GoogleService-Info.plist -p ios $dsymPath
+        fi
+    - &decode_google_service_ios
+      name: Decode Google Service files for iOS
+      script: |
+        mkdir -p $FCI_BUILD_DIR/ios/config/production
+        mkdir -p $FCI_BUILD_DIR/ios/config/staging
+        mkdir -p $FCI_BUILD_DIR/ios/config/qa
+        mkdir -p $FCI_BUILD_DIR/ios/config/develop
+        echo "$IOS_FIREBASE_JSON_PRODUCTION" | base64 --decode > $FCI_BUILD_DIR/ios/config/production/GoogleService-Info.plist
+        echo "$IOS_FIREBASE_JSON_STAGING" | base64 --decode > $FCI_BUILD_DIR/ios/config/staging/GoogleService-Info.plist
+        echo "$IOS_FIREBASE_JSON_QA" | base64 --decode > $FCI_BUILD_DIR/ios/config/qa/GoogleService-Info.plist
+        echo "$IOS_FIREBASE_JSON_DEVELOP" | base64 --decode > $FCI_BUILD_DIR/ios/config/develop/GoogleService-Info.plist
+    - &decode_google_service_android
+      name: Decode Google Service files for Android
+      script: |
+        mkdir -p $FCI_BUILD_DIR/android/app/src/production
+        mkdir -p $FCI_BUILD_DIR/android/app/src/staging
+        mkdir -p $FCI_BUILD_DIR/android/app/src/qa
+        mkdir -p $FCI_BUILD_DIR/android/app/src/develop
+        echo "$ANDROID_FIREBASE_JSON_PRODUCTION" | base64 --decode > $FCI_BUILD_DIR/android/app/src/production/google-services.json
+        echo "$ANDROID_FIREBASE_JSON_STAGING" | base64 --decode > $FCI_BUILD_DIR/android/app/src/staging/google-services.json
+        echo "$ANDROID_FIREBASE_JSON_QA" | base64 --decode > $FCI_BUILD_DIR/android/app/src/qa/google-services.json
+        echo "$ANDROID_FIREBASE_JSON_DEVELOP" | base64 --decode > $FCI_BUILD_DIR/android/app/src/develop/google-services.json
+    - &decode_dart_defines
+      name: Decode dart defines
+      script: |
+        mkdir dart_defines
+        echo $DART_DEFINES_DEVELOP | base64 --decode > $FCI_BUILD_DIR/dart_defines/develop.json
+        echo $DART_DEFINES_QA | base64 --decode > $FCI_BUILD_DIR/dart_defines/qa.json
+        echo $DART_DEFINES_STAGING | base64 --decode > $FCI_BUILD_DIR/dart_defines/staging.json
+        echo $DART_DEFINES_PRODUCTION | base64 --decode > $FCI_BUILD_DIR/dart_defines/production.json
+    - &setup_local_properties
+      name: Setup local.properties
+      script: echo "flutter.sdk=$HOME/programs/flutter" > "$CM_BUILD_DIR/android/local.properties"
+    - &build_dev_ipa
+      name: Build .ipa develop
+      script: make build_dev_ipa
+    - &build_qa_ipa
+      name: Build .ipa qa
+      script: make build_qa_ipa
+    - &build_stg_ipa
+      name: Build .ipa staging
+      script: make build_stg_ipa
+    - &build_prod_ipa
+      name: Build .ipa production
+      script: make build_prod_ipa
+    - &build_dev_apk
+      name: Build .apk develop
+      script: make build_dev_apk
+    - &build_qa_apk
+      name: Build .apk qa
+      script: make build_qa_apk
+    - &build_stg_apk
+      name: Build .apk staging
+      script: make build_stg_apk
+    - &build_prod_apk
+      name: Build .apk production
+      script: make build_prod_apk
+    - &build_dev_aab
+      name: Build .aab develop
+      script: make build_dev_aab
+    - &build_qa_aab
+      name: Build .aab qa
+      script: make build_qa_aab
+    - &build_stg_aab
+      name: Build .aab staging
+      script: make build_stg_aab
+    - &build_prod_aab
+      name: Build .aab production
+      script: make build_prod_aab
+    - &ci
+      name: Run CI
+      script: make check_ci
+  email_release: &email_release
+    email:
+      recipients:
+        - $EMAIL_1
+        - $EMAIL_2
+        - $EMAIL_3
+        - $EMAIL_4
+        - $EMAIL_5
+        - $EMAIL_6
+        # - $EMAIL_7
+        # - $EMAIL_8
+        # - $EMAIL_9
+        # - $EMAIL_10    
+      notify:
+        success: true
+        failure: true
+
+workflows:
+  adhoc_develop:
+    name: Adhoc Develop
+    <<: *instance_mac_os
+    environment:
+      <<: *env_config
+      android_signing:
+        - android_keystore
+      ios_signing:
+        provisioning_profiles:
+          - ios_develop_distribution_profile
+        certificates:
+          - ios_p12
+    scripts:
+      - *set_up_code_signing_settings_on_xcode_project
+      - *setup_local_properties
+      - *force_enable_custom_lint
+      - *sync
+      - *install_pods
+      - *decode_dart_defines
+      - *decode_google_service_ios
+      - *decode_google_service_android
+      - *build_dev_ipa
+      - *build_dev_apk
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - $HOME/Library/Developer/Xcode/DerivedData/**/Build/**/*.dSYM
+      - build/app/outputs/flutter-apk/*.apk
+    publishing:
+      <<: *email_release
+
+  adhoc_qa:
+    name: Adhoc Qa
+    <<: *instance_mac_os
+    environment:
+      <<: *env_config
+      android_signing:
+        - android_keystore
+      ios_signing:
+        provisioning_profiles:
+          - ios_qa_distribution_profile
+        certificates:
+          - ios_p12
+    scripts:
+      - *set_up_code_signing_settings_on_xcode_project
+      - *setup_local_properties
+      - *force_enable_custom_lint
+      - *sync
+      - *install_pods
+      - *decode_dart_defines
+      - *decode_google_service_ios
+      - *decode_google_service_android
+      - *build_qa_ipa
+      - *build_qa_apk
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - $HOME/Library/Developer/Xcode/DerivedData/**/Build/**/*.dSYM
+      - build/app/outputs/flutter-apk/*.apk
+    publishing:
+      <<: *email_release
+
+  adhoc_staging:
+    name: Adhoc Staging
+    <<: *instance_mac_os
+    environment:
+      <<: *env_config
+      android_signing:
+        - android_keystore
+      ios_signing:
+        provisioning_profiles:
+          - ios_staging_distribution_profile
+        certificates:
+          - ios_p12
+    scripts:
+      - *set_up_code_signing_settings_on_xcode_project
+      - *setup_local_properties
+      - *force_enable_custom_lint
+      - *sync
+      - *install_pods
+      - *decode_dart_defines
+      - *decode_google_service_ios
+      - *decode_google_service_android
+      - *build_stg_ipa
+      - *build_stg_apk
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - $HOME/Library/Developer/Xcode/DerivedData/**/Build/**/*.dSYM
+      - build/app/outputs/flutter-apk/*.apk
+    publishing:
+      <<: *email_release
+
+  adhoc_production:
+    name: Adhoc Production
+    <<: *instance_mac_os
+    environment:
+      <<: *env_config
+      android_signing:
+        - android_keystore
+      ios_signing:
+        provisioning_profiles:
+          - ios_production_distribution_profile
+        certificates:
+          - ios_p12
+    scripts:
+      - *set_up_code_signing_settings_on_xcode_project
+      - *setup_local_properties
+      - *force_enable_custom_lint
+      - *sync
+      - *install_pods
+      - *decode_dart_defines
+      - *decode_google_service_ios
+      - *decode_google_service_android
+      - *build_prod_ipa
+      - *build_prod_apk
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - $HOME/Library/Developer/Xcode/DerivedData/**/Build/**/*.dSYM
+      - build/app/outputs/flutter-apk/*.apk
+    publishing:
+      <<: *email_release
+
+  distribution_store_develop:
+    name: Distribution Store Develop
+    <<: *instance_mac_os
+    integrations:
+      app_store_connect: app-store-connect
+    environment:
+      <<: *env_config
+      android_signing:
+        - android_keystore
+      ios_signing:
+        provisioning_profiles:
+          - ios_develop_distribution_profile
+        certificates:
+          - ios_p12
+    scripts:
+      - *set_up_code_signing_settings_on_xcode_project
+      - *setup_local_properties
+      - *force_enable_custom_lint
+      - *sync
+      - *install_pods
+      - *decode_dart_defines
+      - *decode_google_service_ios
+      - *decode_google_service_android
+      - *change_build_number_pubspec_ios_dev
+      - *build_dev_ipa
+      - *change_build_number_pubspec_android_dev
+      - *build_dev_aab
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - $HOME/Library/Developer/Xcode/DerivedData/**/Build/**/*.dSYM
+      - build/app/outputs/bundle/developRelease/*.aab
+    publishing:
+      google_play:
+        credentials: $GOOGLE_PLAY_SERVICE_ACCOUNT_CREDENTIALS
+        track: internal
+        submit_as_draft: true
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
+        beta_groups:
+          - "testers"
+        expire_build_submitted_for_review: false
+        submit_to_app_store: false
+      <<: *email_release
+
+  distribution_store_qa:
+    name: Distribution Store Qa
+    <<: *instance_mac_os
+    integrations:
+      app_store_connect: app-store-connect
+    environment:
+      <<: *env_config
+      android_signing:
+        - android_keystore
+      ios_signing:
+        provisioning_profiles:
+          - ios_qa_distribution_profile
+        certificates:
+          - ios_p12
+    scripts:
+      - *set_up_code_signing_settings_on_xcode_project
+      - *setup_local_properties
+      - *sync
+      - *install_pods
+      - *decode_dart_defines
+      - *decode_google_service_ios
+      - *decode_google_service_android
+      - *change_build_number_pubspec_ios_qa
+      - *build_qa_ipa
+      - *change_build_number_pubspec_android_qa
+      - *build_qa_aab
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - $HOME/Library/Developer/Xcode/DerivedData/**/Build/**/*.dSYM
+      - build/app/outputs/bundle/qaRelease/*.aab
+    publishing:
+      google_play:
+        credentials: $GOOGLE_PLAY_SERVICE_ACCOUNT_CREDENTIALS
+        track: internal
+        submit_as_draft: true
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
+        beta_groups:
+          - "testers"
+        expire_build_submitted_for_review: false
+        submit_to_app_store: false
+      <<: *email_release
+
+  distribution_store_staging:
+    name: Distribution Store Staging
+    <<: *instance_mac_os
+    integrations:
+      app_store_connect: app-store-connect
+    environment:
+      <<: *env_config
+      android_signing:
+        - android_keystore
+      ios_signing:
+        provisioning_profiles:
+          - ios_staging_distribution_profile
+        certificates:
+          - ios_p12
+    scripts:
+      - *set_up_code_signing_settings_on_xcode_project
+      - *setup_local_properties
+      - *force_enable_custom_lint
+      - *sync
+      - *install_pods
+      - *decode_dart_defines
+      - *decode_google_service_ios
+      - *decode_google_service_android
+      - *change_build_number_pubspec_ios_stg
+      - *build_stg_ipa
+      - *change_build_number_pubspec_android_stg
+      - *build_stg_aab
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - $HOME/Library/Developer/Xcode/DerivedData/**/Build/**/*.dSYM
+      - build/app/outputs/bundle/stagingRelease/*.aab
+    publishing:
+      google_play:
+        credentials: $GOOGLE_PLAY_SERVICE_ACCOUNT_CREDENTIALS
+        track: internal
+        submit_as_draft: true
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
+        beta_groups:
+          - "testers"
+        expire_build_submitted_for_review: false
+        submit_to_app_store: false
+      <<: *email_release
+
+  distribution_store_production:
+    name: Distribution Store Production
+    <<: *instance_mac_os
+    integrations:
+      app_store_connect: app-store-connect
+    environment:
+      <<: *env_config
+      android_signing:
+        - android_keystore
+      ios_signing:
+        provisioning_profiles:
+          - ios_production_distribution_profile
+        certificates:
+          - ios_p12
+    scripts:
+      - *setup_local_properties
+      - *force_enable_custom_lint
+      - *sync
+      - *install_pods
+      - *set_up_code_signing_settings_on_xcode_project
+      - *decode_dart_defines
+      - *decode_google_service_ios
+      - *decode_google_service_android
+      - *build_prod_ipa
+      - *build_prod_aab
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - $HOME/Library/Developer/Xcode/DerivedData/**/Build/**/*.dSYM
+      - build/app/outputs/bundle/productionRelease/*.aab
+    publishing:
+      scripts:
+        - *upload_debug_symbols_to_crashlytics
+      google_play:
+        credentials: $GOOGLE_PLAY_SERVICE_ACCOUNT_CREDENTIALS
+        track: internal
+        submit_as_draft: true
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
+        beta_groups:
+          - "testers"
+        expire_build_submitted_for_review: false
+        submit_to_app_store: false
+      <<: *email_release
+
+  ci:
+    name: CI
+    triggering:
+      events:
+        - pull_request
+      branch_patterns:
+        - pattern: "*"
+          include: true
+          source: true
+    when:
+      condition: not event.pull_request.draft
+    environment:
+      <<: *env_config
+    scripts:
+      - *decode_dart_defines
+      - *force_enable_custom_lint
+      - *sync
+      - *ci
+    artifacts:
+      - test/widget_test/**/failures/**/*.png
+    publishing:
+      <<: *email_release

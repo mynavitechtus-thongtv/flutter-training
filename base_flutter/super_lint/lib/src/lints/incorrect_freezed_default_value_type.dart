@@ -1,0 +1,66 @@
+import 'package:collection/collection.dart';
+
+import '../index.dart';
+
+class IncorrectFreezedDefaultValueType
+    extends CommonLintRule<_IncorrectFreezedDefaultValueTypeParameter> {
+  IncorrectFreezedDefaultValueType(
+    CustomLintConfigs configs,
+  ) : super(
+          RuleConfig(
+            name: 'incorrect_freezed_default_value_type',
+            configs: configs,
+            paramsParser: _IncorrectFreezedDefaultValueTypeParameter.fromMap,
+            problemMessage: (_) => 'The value used in @Default must match the field type.',
+          ),
+        );
+
+  @override
+  Future<void> check(
+    CustomLintResolver resolver,
+    ErrorReporter reporter,
+    CustomLintContext context,
+    String rootPath,
+  ) async {
+    final resolvedUnit = await resolver.getResolvedUnitResult();
+    final typeSystem = resolvedUnit.typeSystem;
+
+    context.registry.addSimpleFormalParameter((node) {
+      final annotation = node.metadata.firstWhereOrNull((element) {
+        if (element.name.name != 'Default') return false;
+        final libraryUri = element.element2?.library2?.uri.toString();
+        return libraryUri?.contains('freezed_annotation') == true;
+      });
+
+      if (annotation == null) return;
+
+      final argList = annotation.arguments?.arguments;
+      final defaultArg = argList != null && argList.isNotEmpty ? argList.first : null;
+      if (defaultArg == null) return;
+
+      final defaultType = defaultArg.staticType;
+      final paramType = node.declaredFragment?.element.type;
+      if (defaultType == null || paramType == null) return;
+
+      if (!typeSystem.isAssignableTo(defaultType, paramType)) {
+        reporter.atNode(annotation, code);
+      }
+    });
+  }
+}
+
+class _IncorrectFreezedDefaultValueTypeParameter extends CommonLintParameter {
+  const _IncorrectFreezedDefaultValueTypeParameter({
+    super.excludes,
+    super.includes,
+    super.severity,
+  });
+
+  static _IncorrectFreezedDefaultValueTypeParameter fromMap(Map<String, dynamic> map) {
+    return _IncorrectFreezedDefaultValueTypeParameter(
+      excludes: safeCastToListString(map['excludes']),
+      includes: safeCastToListString(map['includes']),
+      severity: convertStringToErrorSeverity(map['severity']),
+    );
+  }
+}

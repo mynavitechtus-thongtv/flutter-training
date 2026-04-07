@@ -1,0 +1,129 @@
+import '../index.dart';
+
+class AvoidHardCodedStrings extends CommonLintRule<_AvoidHardCodedStringsParameter> {
+  AvoidHardCodedStrings(
+    CustomLintConfigs configs,
+  ) : super(
+          RuleConfig(
+            name: 'avoid_hard_coded_strings',
+            configs: configs,
+            paramsParser: _AvoidHardCodedStringsParameter.fromMap,
+            problemMessage: (_) =>
+                'Avoid hardcoding strings. Use a localization package or append ".hardcoded" to the string to suppress this message.',
+          ),
+        );
+
+  @override
+  Future<void> check(
+    CustomLintResolver resolver,
+    ErrorReporter reporter,
+    CustomLintContext context,
+    String rootPath,
+  ) async {
+    context.registry.addSimpleStringLiteral((node) {
+      if (node.value.length < parameters.minimumLength) {
+        return;
+      }
+
+      if (node.parent?.toSource().startsWith('import') ?? false) {
+        return;
+      }
+
+      if (node.parent?.toSource().startsWith('export') ?? false) {
+        return;
+      }
+
+      if (node.parent?.toSource().startsWith('part') ?? false) {
+        return;
+      }
+
+      if (node.parent?.toSource().endsWith('.hardcoded') ?? false) {
+        return;
+      }
+
+      if (node.parent?.parent?.parent?.toSource().startsWith('@RoutePage') ?? false) {
+        return;
+      }
+
+      reporter.atNode(node, code);
+    });
+
+    context.registry.addInterpolationString((node) {
+      if (node.value.length < parameters.minimumLength) {
+        return;
+      }
+
+      // ignore if ".hardcoded" is appended after the string
+      if (node.parent?.parent?.toSource().endsWith('.hardcoded') ?? false) {
+        return;
+      }
+      reporter.atNode(node.parent ?? node, code);
+    });
+  }
+
+  @override
+  List<Fix> getFixes() => [
+        _AvoidHardCodedStringsFix(config),
+      ];
+}
+
+class _AvoidHardCodedStringsFix extends CommonQuickFix<_AvoidHardCodedStringsParameter> {
+  _AvoidHardCodedStringsFix(super.config);
+
+  @override
+  Future<void> run(
+    CustomLintResolver resolver,
+    ChangeReporter reporter,
+    CustomLintContext context,
+    AnalysisError analysisError,
+    List<AnalysisError> others,
+  ) async {
+    context.registry.addSimpleStringLiteral((node) {
+      if (!node.sourceRange.intersects(analysisError.sourceRange)) return;
+
+      final changeBuilder = reporter.createChangeBuilder(
+        message: 'Append ".hardcoded"',
+        priority: 80,
+      );
+
+      changeBuilder.addDartFileEdit((builder) {
+        builder.addSimpleInsertion(node.end, '.hardcoded');
+      });
+    });
+
+    context.registry.addInterpolationString((node) {
+      if (!node.sourceRange.intersects(analysisError.sourceRange)) return;
+
+      final changeBuilder = reporter.createChangeBuilder(
+        message: 'Append ".hardcoded"',
+        priority: 80,
+      );
+
+      changeBuilder.addDartFileEdit((builder) {
+        builder.addSimpleInsertion(node.parent?.end ?? node.end, '.hardcoded');
+      });
+    });
+  }
+}
+
+class _AvoidHardCodedStringsParameter extends CommonLintParameter {
+  const _AvoidHardCodedStringsParameter({
+    super.excludes,
+    super.includes,
+    super.severity,
+    this.minimumLength = _defaultMinimumLength,
+  });
+
+  final int minimumLength;
+
+  static _AvoidHardCodedStringsParameter fromMap(Map<String, dynamic> map) {
+    return _AvoidHardCodedStringsParameter(
+      excludes: safeCastToListString(map['excludes']),
+      includes: safeCastToListString(map['includes']),
+      severity: convertStringToErrorSeverity(map['severity']),
+      minimumLength: safeCast(map['minimum_length']) ?? _defaultMinimumLength,
+    );
+  }
+
+  static const _defaultMinimumLength = 1;
+}

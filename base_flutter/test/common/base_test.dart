@@ -1,0 +1,170 @@
+// ignore_for_file: test_folder_must_mirror_lib_folder
+import 'dart:io';
+
+import 'package:auto_route/auto_route.dart';
+import 'package:dio/dio.dart';
+import 'package:file/local.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter_cache_manager/flutter_cache_manager.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:intl/date_symbol_data_local.dart';
+import 'package:mocktail/mocktail.dart';
+import 'package:nalsflutter/index.dart';
+import 'package:visibility_detector/visibility_detector.dart';
+
+import 'index.dart';
+
+void main() {
+  LocaleSettings.setLocaleRawSync(TestConfig.defaultLocale.languageCode);
+  AppColors.current = AppColors.defaultAppColor;
+  AppThemes.currentAppThemeType = AppThemeType.light;
+
+  setUpAll(() async {
+    VisibilityDetectorController.instance.updateInterval = Duration.zero;
+    HttpOverrides.global = null;
+
+    // others
+    registerFallbackValue(RequestOptions());
+    registerFallbackValue(DioException(requestOptions: RequestOptions()));
+    registerFallbackValue(
+      AppFirebaseAuthException(kind: AppFirebaseAuthExceptionKind.invalidEmail),
+    );
+    registerFallbackValue(const PageRouteInfo(''));
+    registerFallbackValue(const RemoteMessage());
+    registerFallbackValue(DioException(requestOptions: RequestOptions()));
+    registerFallbackValue(RestMethod.get);
+    registerFallbackValue(_FakeNormalEvent());
+    registerFallbackValue(_FakeScreenViewEvent());
+    registerFallbackValue(ScreenName.mainPage);
+  });
+
+  setUp(() {
+    initializeDateFormatting();
+
+    when(() => ref.read(appNavigatorProvider)).thenReturn(navigator);
+    when(() => ref.read(exceptionHandlerProvider)).thenReturn(exceptionHandler);
+    when(() => ref.read(appPreferencesProvider)).thenReturn(appPreferences);
+    when(() => ref.read(appDatabaseProvider)).thenReturn(appDatabase);
+    when(() => ref.read(appApiServiceProvider)).thenReturn(appApiService);
+    when(() => ref.read(firebaseFirestoreServiceProvider)).thenReturn(firebaseFirestoreService);
+    when(() => ref.read(firebaseMessagingServiceProvider)).thenReturn(firebaseMessagingService);
+    when(() => ref.read(analyticsHelperProvider)).thenReturn(analyticsHelper);
+    when(() => ref.read(connectivityHelperProvider)).thenReturn(connectivityHelper);
+    when(() => ref.read(crashlyticsHelperProvider)).thenReturn(crashlyticsHelper);
+    when(() => ref.read(deepLinkHelperProvider)).thenReturn(deepLinkHelper);
+    when(() => ref.read(deviceHelperProvider)).thenReturn(deviceHelper);
+    when(() => ref.read(localPushNotificationHelperProvider))
+        .thenReturn(localPushNotificationHelper);
+    when(() => ref.read(packageHelperProvider)).thenReturn(packageHelper);
+    when(() => ref.read(permissionHelperProvider)).thenReturn(permissionHelper);
+    when(() => ref.read(sharedViewModelProvider)).thenReturn(sharedViewModel);
+    // this block will be removed after running `make init` - START
+    // this block will be removed after running `make init` - END
+    when(() => analyticsHelper.logEvent(any())).thenAnswer((_) => Future.value());
+    when(() => analyticsHelper.logScreenView(any())).thenAnswer((_) => Future.value());
+    when(() => analyticsHelper.setUserId(any())).thenAnswer((_) => Future.value());
+    when(() => analyticsHelper.setUserProperties(any())).thenAnswer((_) => Future.value());
+    when(() => analyticsHelper.reset()).thenAnswer((_) => Future.value());
+  });
+
+  tearDown(() {
+    resetMocktailState();
+  });
+}
+
+// Fakes
+class _FakeNormalEvent extends Fake implements NormalEvent {}
+
+class _FakeScreenViewEvent extends Fake implements ScreenViewEvent {}
+
+// Mocks
+class MockCacheManager extends Mock implements BaseCacheManager {
+  final fileSystem = const LocalFileSystem();
+
+  @override
+  Stream<FileResponse> getFileStream(
+    String url, {
+    String? key,
+    Map<String, String>? headers,
+    bool? withProgress,
+  }) async* {
+    final file = fileSystem.file('test/assets/mock_image.jpg');
+
+    yield FileInfo(
+      file,
+      FileSource.Cache,
+      DateTime(2050),
+      url,
+    );
+  }
+}
+
+class MockInvalidCacheManager extends Mock implements BaseCacheManager {
+  @override
+  Stream<FileResponse> getFileStream(
+    String url, {
+    String? key,
+    Map<String, String>? headers,
+    bool? withProgress,
+  }) async* {
+    throw HttpExceptionWithStatus(
+      404,
+      'Invalid statusCode 404',
+      uri: Uri.parse(url),
+    );
+  }
+}
+
+class _MockRef extends Mock implements Ref {}
+
+class _MockNavigator extends Mock implements AppNavigator {}
+
+class _MockExceptionHandler extends Mock implements ExceptionHandler {}
+
+class _MockAppPreferences extends Mock implements AppPreferences {}
+
+class _MockAppDatabase extends Mock implements AppDatabase {}
+
+class _MockAppApiService extends Mock implements AppApiService {}
+
+class _MockFirebaseFirestoreService extends Mock implements FirebaseFirestoreService {}
+
+class _MockFirebaseMessagingService extends Mock implements FirebaseMessagingService {}
+
+class _MockAnalyticsHelper extends Mock implements AnalyticsHelper {}
+
+class _MockConnectivityHelper extends Mock implements ConnectivityHelper {}
+
+class _MockCrashlyticsHelper extends Mock implements CrashlyticsHelper {}
+
+class _MockDeepLinkHelper extends Mock implements DeepLinkHelper {}
+
+class _MockDeviceHelper extends Mock implements DeviceHelper {}
+
+class _MockLocalPushNotificationHelper extends Mock implements LocalPushNotificationHelper {}
+
+class _MockPackageHelper extends Mock implements PackageHelper {}
+
+class _MockPermissionHelper extends Mock implements PermissionHelper {}
+
+class _MockSharedViewModel extends Mock implements SharedViewModel {}
+
+final ref = _MockRef();
+final navigator = _MockNavigator();
+final exceptionHandler = _MockExceptionHandler();
+final appPreferences = _MockAppPreferences();
+final appDatabase = _MockAppDatabase();
+final appApiService = _MockAppApiService();
+final firebaseFirestoreService = _MockFirebaseFirestoreService();
+final firebaseMessagingService = _MockFirebaseMessagingService();
+final analyticsHelper = _MockAnalyticsHelper();
+final connectivityHelper = _MockConnectivityHelper();
+final crashlyticsHelper = _MockCrashlyticsHelper();
+final deepLinkHelper = _MockDeepLinkHelper();
+final deviceHelper = _MockDeviceHelper();
+final localPushNotificationHelper = _MockLocalPushNotificationHelper();
+final packageHelper = _MockPackageHelper();
+final permissionHelper = _MockPermissionHelper();
+final sharedViewModel = _MockSharedViewModel();
+const testImageUrl = 'https://randomuser.me/api/portraits/men/1.jpg';

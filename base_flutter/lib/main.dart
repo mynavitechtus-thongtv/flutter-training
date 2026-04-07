@@ -1,0 +1,36 @@
+import 'dart:async';
+
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_native_splash/flutter_native_splash.dart';
+import 'package:hooks_riverpod/hooks_riverpod.dart';
+
+import 'index.dart';
+
+// ignore: avoid_unnecessary_async_function
+Future<void> main() async => runZonedGuarded(
+      _runMyApp,
+      (error, stackTrace) => _reportError(error: error, stackTrace: stackTrace),
+    );
+
+Future<void> _runMyApp() async {
+  final widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
+  FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);
+  await Firebase.initializeApp();
+  await AppInitializer.init();
+  final initialResource = _loadInitialResource();
+  runApp(ProviderScope(
+    observers: [AppProviderObserver()],
+    child: MyApp(initialResource: initialResource),
+  ));
+}
+
+void _reportError({required error, required StackTrace stackTrace}) {
+  Log.e(error, stackTrace: stackTrace, name: 'Uncaught exception');
+  FirebaseCrashlytics.instance.recordError(error, stackTrace);
+}
+
+InitialResource _loadInitialResource() {
+  return const InitialResource();
+}

@@ -1,0 +1,275 @@
+# This file contains the fastlane.tools configuration
+# You can find the documentation at https://docs.fastlane.tools
+#
+# For a list of all available actions, check out
+#
+#     https://docs.fastlane.tools/actions
+#
+# For a list of all available plugins, check out
+#
+#     https://docs.fastlane.tools/plugins/available-plugins
+#
+
+# Uncomment the line if you want fastlane to automatically update itself
+# update_fastlane
+
+require 'dotenv'
+require 'yaml'
+Dotenv.load(File.expand_path('../..', __dir__) + '/.env.default')
+
+default_platform(:ios)
+
+platform :ios do
+  # secrets & common configs (from .env.default)
+  SLACK_HOOKS_URL_SUCCESS = ENV["SLACK_HOOKS_URL_SUCCESS"]
+  SLACK_HOOKS_URL_ERROR = ENV["SLACK_HOOKS_URL_ERROR"]
+  MENTIONS_SUCCESS = ENV["MENTIONS_SUCCESS"] || "@channel"
+  MENTIONS_ERROR = ENV["MENTIONS_ERROR"] || "@minhnt3"
+  DEV_FLAVOR = ENV["DEV_FLAVOR"] || "develop"
+  QA_FLAVOR = ENV["QA_FLAVOR"] || "qa"
+  STG_FLAVOR = ENV["STG_FLAVOR"] || "staging"
+  PROD_FLAVOR = ENV["PROD_FLAVOR"] || "production"
+
+  # App Store IDs (from .env.default)
+  DEV_APP_STORE_ID = ENV["DEV_APP_STORE_ID"]
+  QA_APP_STORE_ID = ENV["QA_APP_STORE_ID"]
+  STG_APP_STORE_ID = ENV["STG_APP_STORE_ID"]
+  PROD_APP_STORE_ID = ENV["PROD_APP_STORE_ID"]
+
+  # Team IDs (from .env.default)
+  QA_TEAM_ID = ENV["QA_TEAM_ID"]
+  PROD_TEAM_ID = ENV["PROD_TEAM_ID"]
+
+  # App Store Connect API Key (from .env.default)
+  QA_KEY_ID = ENV["QA_KEY_ID"]
+  PROD_KEY_ID = ENV["PROD_KEY_ID"]
+  QA_KEY_FILEPATH = ENV["QA_KEY_FILEPATH"]
+  PROD_KEY_FILEPATH = ENV["PROD_KEY_FILEPATH"]
+  QA_ISSUER_ID = ENV["QA_ISSUER_ID"]
+  PROD_ISSUER_ID = ENV["PROD_ISSUER_ID"]
+
+  # TestFlight external groups (from .env.default)
+  DEV_TEST_FLIGHT_EXTERNAL_GROUPS = ENV["DEV_TEST_FLIGHT_EXTERNAL_GROUPS"] || "testers"
+  QA_TEST_FLIGHT_EXTERNAL_GROUPS = ENV["QA_TEST_FLIGHT_EXTERNAL_GROUPS"] || "testers"
+  STG_TEST_FLIGHT_EXTERNAL_GROUPS = ENV["STG_TEST_FLIGHT_EXTERNAL_GROUPS"] || "testers"
+  PROD_TEST_FLIGHT_EXTERNAL_GROUPS = ENV["PROD_TEST_FLIGHT_EXTERNAL_GROUPS"] || "testers"
+
+  # constants for xcconfig
+  BUILD_NUMBER_KEY = "FLUTTER_BUILD_NUMBER"
+  BUILD_NAME_KEY = "FLUTTER_BUILD_NAME"
+  BUNDLE_ID_KEY = "PRODUCT_BUNDLE_IDENTIFIER"
+  APP_DISPLAY_NAME_KEY = "APP_DISPLAY_NAME"
+
+  # ===== deploy to testflight =====
+  desc "Develop: Increase version, build & deploy app to TestFlight"
+  lane :increase_version_build_and_up_testflight_develop do
+    increase_version_and_build_and_deploy_to_test_flight(DEV_FLAVOR)
+  end
+
+  desc "Qa: Increase version, build & deploy app to TestFlight"
+  lane :increase_version_build_and_up_testflight_qa do
+    increase_version_and_build_and_deploy_to_test_flight(QA_FLAVOR)
+  end
+
+  desc "Staging: Increase version, build & deploy app to TestFlight"
+  lane :increase_version_build_and_up_testflight_staging do
+    increase_version_and_build_and_deploy_to_test_flight(STG_FLAVOR)
+  end
+
+  desc "Production: Increase version, build & deploy app to TestFlight"
+  lane :increase_version_build_and_up_testflight_production do
+    increase_version_and_build_and_deploy_to_test_flight(PROD_FLAVOR)
+  end
+
+  def increase_version_and_build_and_deploy_to_test_flight(flavor)
+    begin
+      # Get build info based on flavor
+      xcconfig = get_xcconfig_path(flavor)
+      bundle_id = get_bundle_id(flavor)
+      app_store_id = get_app_store_id(flavor)
+      ipa_path = get_ipa_file_path(flavor)
+
+      # Fetch the latest build number from TestFlight of the current version name
+      api_key = app_store_connect_api_key(
+        key_id: get_key_id(flavor),
+        issuer_id: get_issuer_id(flavor),
+        key_filepath: get_key_filepath(flavor),
+        duration: 1200, # optional (maximum 1200)
+        in_house: false # optional but may be required if using match/sigh
+      )
+      version_name = get_version_name_of_pubspec()
+      latest_release = latest_testflight_build_number(
+        api_key: api_key,
+        team_id: get_team_id(flavor),
+        app_identifier: bundle_id,
+        version: version_name
+      )
+
+      # Get the original build number from pubspec.yaml
+      build_number = get_build_number_of_pubspec()
+      
+      # Increase build number in pubspec.yaml
+      project_root = get_project_root_path()
+      new_build_number = latest_release.nil? ? 1 : latest_release.to_i + 1
+      sh("cd ../.. && dart run #{project_root}/tools/dart_tools/lib/set_build_number_pubspec.dart #{new_build_number}")
+      
+      # Build the .ipa file
+      build_ipa(flavor)
+
+      # Revert the build number in pubspec.yaml
+      sh("cd ../.. && dart run #{project_root}/tools/dart_tools/lib/set_build_number_pubspec.dart #{build_number}")
+
+      # Deploy to TestFlight
+      deploy_to_test_flight(bundle_id, app_store_id, ipa_path, xcconfig, flavor)
+      
+      # Send Slack notification
+      version = "#{version_name}(#{new_build_number})"
+      changelog = get_changelog()
+      send_slack("#{MENTIONS_SUCCESS} *Deployed onto #{flavor} Environment. Test Flight iOS #{version}*\n*Release notes:* #{changelog}")
+    rescue => exception
+      error(exception)
+    end
+  end
+
+  def build_ipa(flavor)
+    begin
+      if flavor == DEV_FLAVOR
+        sh("cd ../.. && make build_dev_ipa")
+      elsif flavor == QA_FLAVOR
+        sh("cd ../.. && make build_qa_ipa")
+      elsif flavor == STG_FLAVOR
+        sh("cd ../.. && make build_stg_ipa")
+      elsif flavor == PROD_FLAVOR
+        sh("cd ../.. && make build_prod_ipa")
+      else
+        raise "flavor #{flavor} is invalid"
+      end
+    rescue => exception
+      error(exception)
+    end
+  end
+
+  def deploy_to_test_flight(bundle_id, app_store_id, ipa_path, xcconfig, flavor)
+    begin
+      api_key = app_store_connect_api_key(
+        key_id: get_key_id(flavor),
+        issuer_id: get_issuer_id(flavor),
+        key_filepath: get_key_filepath(flavor),
+        duration: 1200, # optional (maximum 1200)
+        in_house: false # optional but may be required if using match/sigh
+      )
+      changelog = get_changelog()
+      upload_to_testflight(
+        api_key: api_key,
+        changelog: changelog,
+        ipa: ipa_path,
+        distribute_external: true,
+        notify_external_testers: true,
+        groups: get_test_flight_groups(flavor),
+        apple_id: app_store_id,
+        itc_provider: get_team_id(flavor)
+      )
+    rescue => exception
+      error(exception)
+    end
+  end
+
+  def get_app_store_id(flavor)
+    case flavor
+      when DEV_FLAVOR
+        return DEV_APP_STORE_ID
+      when QA_FLAVOR
+        return QA_APP_STORE_ID
+      when STG_FLAVOR
+        return STG_APP_STORE_ID
+      when PROD_FLAVOR
+        return PROD_APP_STORE_ID
+      else
+        raise "Unknown flavor: #{flavor}"
+    end
+  end
+
+  def get_team_id(flavor)
+    flavor == PROD_FLAVOR ? PROD_TEAM_ID : QA_TEAM_ID
+  end
+
+  def get_key_id(flavor)
+    flavor == PROD_FLAVOR ? PROD_KEY_ID : QA_KEY_ID
+  end
+
+  def get_key_filepath(flavor)
+    flavor == PROD_FLAVOR ? PROD_KEY_FILEPATH : QA_KEY_FILEPATH
+  end
+
+  def get_issuer_id(flavor)
+    flavor == PROD_FLAVOR ? PROD_ISSUER_ID : QA_ISSUER_ID
+  end
+
+  def get_test_flight_groups(flavor)
+    case flavor
+      when DEV_FLAVOR
+        return DEV_TEST_FLIGHT_EXTERNAL_GROUPS
+      when QA_FLAVOR
+        return QA_TEST_FLIGHT_EXTERNAL_GROUPS
+      when STG_FLAVOR
+        return STG_TEST_FLIGHT_EXTERNAL_GROUPS
+      when PROD_FLAVOR
+        return PROD_TEST_FLIGHT_EXTERNAL_GROUPS
+      else
+        raise "Unknown flavor: #{flavor}"
+    end
+  end
+
+  def get_bundle_id(flavor)
+    path = get_xcconfig_path(flavor)
+    return get_xcconfig_value(path: path, name: BUNDLE_ID_KEY)
+  end
+
+  def get_xcconfig_path(flavor)
+    return "Flutter/#{flavor.capitalize}.xcconfig"
+  end
+
+  def get_ipa_file_path(flavor)
+    path = get_xcconfig_path(flavor)
+    app_name = get_xcconfig_value(path: path, name: APP_DISPLAY_NAME_KEY)
+    return "../build/ios/ipa/#{app_name}.ipa"
+  end
+
+  def get_project_root_path()
+    return File.expand_path("../..", __dir__)
+  end
+
+  def get_version_name_of_pubspec()
+    project_root = get_project_root_path()
+    pubspec_path  = File.join(project_root, "pubspec.yaml")
+    pubspec = YAML.load_file(pubspec_path)
+    return pubspec["version"].split("+").first
+  end
+
+  def get_build_number_of_pubspec()
+    project_root = get_project_root_path()
+    pubspec_path  = File.join(project_root, "pubspec.yaml")
+    pubspec = YAML.load_file(pubspec_path)
+    return pubspec["version"].split("+").last.to_i
+  end
+
+  def get_changelog()
+    project_root = get_project_root_path()
+    changelog_path  = File.join(project_root, "RELEASE_NOTES.md")
+    return File.exist?(changelog_path) ? File.read(changelog_path) : "No release notes provided."
+  end
+
+  def send_slack(message, success = true)
+    slack(
+      message: message,
+      success: success,
+      slack_url: success ? SLACK_HOOKS_URL_SUCCESS : SLACK_HOOKS_URL_ERROR,
+      link_names: true,
+      default_payloads: [:git_branch, :lane]
+    )
+  end
+
+  def error(exception)
+    send_slack("#{MENTIONS_ERROR} Build failed: #{exception.to_s}", false)
+  end
+end

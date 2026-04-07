@@ -1,0 +1,9 @@
+base_locale: ja
+input_directory: lib/resource/l10n
+input_file_pattern: .i18n.json
+output_directory: lib/generated
+output_file_name: app_string.g.dart
+class_name: AppString
+translate_var: l10n
+flutter_integration: true
+enum_name: AppLocale

@@ -1,0 +1,61 @@
+analyzer:
+  plugins:
+    - custom_lint
+
+custom_lint:
+  rules:
+    - prefer_named_parameters:
+      threshold: 2
+    - prefer_is_empty_string:
+    - prefer_is_not_empty_string:
+    - avoid_unnecessary_async_function:
+    - prefer_async_await:
+    - test_folder_must_mirror_lib_folder:
+      lib_folder_path: "lib/test_folder_must_mirror_lib_folder_test/lib"
+      test_folder_paths:
+        - "lib/test_folder_must_mirror_lib_folder_test/test/ut"
+        - "lib/test_folder_must_mirror_lib_folder_test/it"
+      includes:
+        - "lib/test_folder_must_mirror_lib_folder_test/**/*.dart"
+    - incorrect_parent_class:
+      class_post_fixes:
+        - "Page"
+        - "Screen"
+      parent_class_pre_fixes:
+        - "Base"
+        - "Abstract"
+    - prefer_importing_index_file:
+    - avoid_using_text_style_constructor_directly:
+    - util_functions_must_be_static:
+      utils_folder_path: "lib/util_functions_must_be_static_test/utils"
+    - missing_run_catching:
+    - missing_common_scrollbar:
+      common_scrollbar_widget_name: "CommonScrollbar"
+    - avoid_dynamic:
+    - avoid_hard_coded_colors:
+    - prefer_common_widgets:
+    - avoid_hard_coded_strings:
+    - incorrect_screen_name_parameter_value:
+    - incorrect_screen_name_enum_value:
+    - incorrect_event_parameter_name:
+    - incorrect_event_parameter_type:
+    - incorrect_event_name:
+    - avoid_using_datetime_now:
+    - avoid_using_enum_name_as_key:
+    - avoid_using_unsafe_cast:
+    - prefer_single_widget_per_file:
+    - incorrect_freezed_default_value_type:
+    - require_matching_file_and_class_name:
+    - missing_golden_test:
+      widget_folders:
+        - "lib/missing_golden_test_test/lib"
+      test_folder: "lib/missing_golden_test_test/test"
+    - avoid_using_datetime_now:
+    - incorrect_golden_image_name:
+      severity: error
+      excludes:
+        - "lib/excluded_test/**/*.dart"
+      includes:
+        - "**/*_test.dart"
+    - missing_test_group:
+      test_folder_prefix: "test/widget_test"

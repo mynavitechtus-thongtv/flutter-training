@@ -1,0 +1,29 @@
+// ignore_for_file: missing_golden_test
+// ignore_for_file: avoid_hard_coded_colors
+import 'package:flutter/material.dart';
+
+class RoundedRectangleShimmer extends StatelessWidget {
+  const RoundedRectangleShimmer({
+    this.width,
+    this.height,
+    this.radius,
+    super.key,
+  });
+
+  final double? width;
+  final double? height;
+  final double? radius;
+
+  @override
+  Widget build(BuildContext context) {
+    // ignore: prefer_common_widgets
+    return Container(
+      width: width,
+      height: height ?? 16,
+      decoration: BoxDecoration(
+        color: Colors.black,
+        borderRadius: BorderRadius.circular(radius ?? 8),
+      ),
+    );
+  }
+}

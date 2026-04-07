@@ -1,0 +1,214 @@
+// ignore_for_file: avoid_print
+
+import 'dart:io';
+import 'package:glob/glob.dart';
+import 'package:path/path.dart' as path;
+
+final List<String> excludes = [
+  "**.g.dart",
+  "**.config.dart",
+  "**.freezed.dart",
+  "**.mapper.dart",
+  "**/generated/intl/*.dart"
+];
+
+/// Files to include even if they match [excludes] (exceptions).
+/// Use forward slashes; supports exact path or glob (e.g. "generated/app_string.g.dart" or "generated/*.g.dart").
+final List<String> includes = [
+  'generated/app_string.g.dart',
+];
+
+void main(List<String> args) {
+  if (args.isEmpty) {
+    print(
+        'Usage: dart export_all_files.dart <lib_path> [--output=<output_file>] [--check] [--skip-error]');
+    print('Example: dart export_all_files.dart lib');
+    print('Example: dart export_all_files.dart lib --output=lib/index.dart');
+    print('Example: dart export_all_files.dart lib --check (for CI)');
+    print('Example: dart export_all_files.dart lib --skip-error (skip errors)');
+    exit(1);
+  }
+
+  final libPath = args[0];
+  String? outputFile;
+  bool checkMode = false;
+  bool skipError = false;
+
+  // Parse arguments
+  for (int i = 1; i < args.length; i++) {
+    if (args[i].startsWith('--output=')) {
+      outputFile = args[i].split('=')[1];
+    } else if (args[i] == '--check') {
+      checkMode = true;
+    } else if (args[i] == '--skip-error') {
+      skipError = true;
+    }
+  }
+
+  // Default output file
+  outputFile ??= '$libPath/index.dart';
+
+  // Check if lib directory exists
+  final libDir = Directory(libPath);
+  if (!libDir.existsSync()) {
+    print('Error: Directory not found at $libPath');
+    if (skipError) {
+      print('Skip error mode: Continuing despite directory not found');
+      exit(0);
+    }
+    exit(1);
+  }
+
+  // Get all dart files
+  final dartFiles = _getDartFiles(libPath, excludes, includes, outputFile);
+
+  if (dartFiles.isEmpty) {
+    print('Warning: No dart files found in $libPath');
+    if (checkMode) {
+      if (skipError) {
+        print('Skip error mode: Continuing despite no dart files found');
+        exit(0);
+      }
+      exit(1);
+    }
+    return;
+  }
+
+  // Generate index.dart content
+  final newContent = _generateIndexContent(dartFiles, libPath);
+
+  // Read existing file content (if exists)
+  final indexFile = File(outputFile);
+  String? existingContent;
+  if (indexFile.existsSync()) {
+    existingContent = indexFile.readAsStringSync();
+  }
+
+  // Create output directory if it doesn't exist
+  final outputDir = Directory(path.dirname(outputFile)).absolute;
+  if (!outputDir.existsSync()) {
+    outputDir.createSync(recursive: true);
+  }
+
+  // Always write/update the file
+  indexFile.writeAsStringSync(newContent);
+
+  if (checkMode) {
+    // CI check mode: write file and exit based on whether content changed
+    if (existingContent == null) {
+      print(
+          '❌ File $outputFile did not exist - created with ${dartFiles.length} export statements');
+      if (skipError) {
+        print('Skip error mode: Continuing despite file not existing');
+        exit(0);
+      }
+      exit(1);
+    }
+
+    if (existingContent.trim() != newContent.trim()) {
+      print('Content of index.dart: $newContent');
+      print('❌ File $outputFile was outdated - updated with ${dartFiles.length} export statements');
+      if (skipError) {
+        print('Skip error mode: Continuing despite file being outdated');
+        exit(0);
+      }
+      exit(1);
+    }
+
+    print('✅ File $outputFile was already up to date (${dartFiles.length} exports)');
+    exit(0);
+  } else {
+    // Normal mode: just report what happened
+    if (existingContent == null) {
+      print('✅ Created $outputFile with ${dartFiles.length} export statements');
+    } else if (existingContent.trim() != newContent.trim()) {
+      print('✅ Updated $outputFile with ${dartFiles.length} export statements');
+    } else {
+      print('✅ File $outputFile is already up to date (${dartFiles.length} exports)');
+    }
+
+    exit(0);
+  }
+}
+
+List<String> _getDartFiles(
+  String libPath,
+  List<String> excludes,
+  List<String> includes,
+  String outputFile,
+) {
+  final libDir = Directory(libPath);
+  final dartFiles = <String>[];
+
+  // Convert exclude patterns to Glob objects
+  final excludeGlobs = excludes.map((pattern) => Glob(pattern)).toList();
+  // Convert include patterns to Glob objects (support both exact path and glob)
+  final includeGlobs = includes.map((p) => Glob(p)).toList();
+  final includeExactPaths =
+      includes.where((p) => !p.contains('*')).map((p) => p.replaceAll(r'\', '/')).toList();
+
+  final libDirPath = path.absolute(path.normalize(libPath));
+
+  // Get all dart files recursively
+  final allFiles = libDir
+      .listSync(recursive: true)
+      .where((file) => file is File)
+      .map((file) => file.path)
+      .where((filePath) => filePath.endsWith('.dart'))
+      .toList();
+
+  for (final filePath in allFiles) {
+    // Skip the output file itself
+    if (path.normalize(filePath) == path.normalize(outputFile)) {
+      continue;
+    }
+
+    final relativePath = path.relative(path.normalize(filePath), from: libDirPath);
+    final relativePathSlash = relativePath.replaceAll(r'\', '/');
+
+    // Check if file is in includes (exception) -> always include
+    final isIncluded = includeExactPaths.contains(relativePathSlash) ||
+        includeGlobs.any((g) => g.matches(relativePathSlash) || g.matches(relativePath));
+    if (isIncluded) {
+      dartFiles.add(filePath);
+      continue;
+    }
+
+    // Check if file should be excluded
+    bool shouldExclude = false;
+    for (final glob in excludeGlobs) {
+      if (glob.matches(relativePath) || glob.matches(filePath)) {
+        shouldExclude = true;
+        break;
+      }
+    }
+
+    if (!shouldExclude) {
+      dartFiles.add(filePath);
+    }
+  }
+
+  // Sort files for consistent output
+  dartFiles.sort();
+
+  return dartFiles;
+}
+
+String _generateIndexContent(List<String> dartFiles, String libPath) {
+  final buffer = StringBuffer();
+
+  // Add header comment
+  buffer.writeln('/// GENERATED CODE - DO NOT MODIFY BY HAND');
+  buffer.writeln('/// Generated by: dart tools/dart_tools/lib/export_all_files.dart');
+  buffer.writeln();
+
+  // Generate export statements
+  for (final filePath in dartFiles) {
+    final relativePath = path.relative(filePath, from: libPath);
+    // Convert Windows backslashes to forward slashes for consistent paths
+    final exportPath = relativePath.replaceAll(r'\', '/');
+    buffer.writeln("export '$exportPath';");
+  }
+
+  return buffer.toString();
+}

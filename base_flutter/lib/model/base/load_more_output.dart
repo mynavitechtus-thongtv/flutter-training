@@ -1,0 +1,26 @@
+import 'package:freezed_annotation/freezed_annotation.dart';
+
+import '../../index.dart';
+
+part 'load_more_output.freezed.dart';
+
+@freezed
+sealed class LoadMoreOutput<T> with _$LoadMoreOutput<T> {
+  const LoadMoreOutput._();
+
+  const factory LoadMoreOutput({
+    required List<T> data,
+    Object? otherData,
+    @Default(Constant.initialPage) int page,
+    @Default(false) bool isRefreshSuccess,
+    @Default(0) int offset,
+    @Default(false) bool isLastPage,
+    @Default(0) int total,
+    @Default(false) bool isLoading,
+    AppException? exception,
+  }) = _LoadMoreOutput;
+
+  int get nextPage => page + 1;
+  int get previousPage => page - 1;
+  bool get hasError => exception != null;
+}

@@ -1,0 +1,206 @@
+# This file contains the fastlane.tools configuration
+# You can find the documentation at https://docs.fastlane.tools
+#
+# For a list of all available actions, check out
+#
+#     https://docs.fastlane.tools/actions
+#
+# For a list of all available plugins, check out
+#
+#     https://docs.fastlane.tools/plugins/available-plugins
+#
+
+# Uncomment the line if you want fastlane to automatically update itself
+# update_fastlane
+
+require 'dotenv'
+Dotenv.load(File.expand_path('../..', __dir__) + '/.env.default')
+
+default_platform(:android)
+
+platform :android do
+  # secrets & common configs (from .env.default)
+  FIREBASE_TOKEN = ENV["FIREBASE_TOKEN"]
+  SLACK_HOOKS_URL_SUCCESS = ENV["SLACK_HOOKS_URL_SUCCESS"]
+  SLACK_HOOKS_URL_ERROR = ENV["SLACK_HOOKS_URL_ERROR"]
+  MENTIONS_SUCCESS = ENV["MENTIONS_SUCCESS"] || "@channel"
+  MENTIONS_ERROR = ENV["MENTIONS_ERROR"] || "@minhnt3"
+  DEV_FLAVOR = ENV["DEV_FLAVOR"] || "develop"
+  QA_FLAVOR = ENV["QA_FLAVOR"] || "qa"
+  STG_FLAVOR = ENV["STG_FLAVOR"] || "staging"
+  PROD_FLAVOR = ENV["PROD_FLAVOR"] || "production"
+
+  # Firebase App Distribution (from .env.default)
+  DEV_FIREBASE_APP_ID = ENV["DEV_FIREBASE_APP_ID"]
+  QA_FIREBASE_APP_ID = ENV["QA_FIREBASE_APP_ID"]
+  STG_FIREBASE_APP_ID = ENV["STG_FIREBASE_APP_ID"]
+  PROD_FIREBASE_APP_ID = ENV["PROD_FIREBASE_APP_ID"]
+
+  # Firebase App Distribution groups (from .env.default)
+  DEV_FIREBASE_GROUPS = ENV["DEV_FIREBASE_GROUPS"] || "testers"
+  QA_FIREBASE_GROUPS = ENV["QA_FIREBASE_GROUPS"] || "testers"
+  STG_FIREBASE_GROUPS = ENV["STG_FIREBASE_GROUPS"] || "testers"
+  PROD_FIREBASE_GROUPS = ENV["PROD_FIREBASE_GROUPS"] || "testers"
+
+  # ===== deploy to firebase =====
+  desc "Develop: Increase version, build & deploy app to Firebase Distribution"
+  lane :increase_version_build_and_up_firebase_develop do
+    increase_version_and_build_and_deploy_to_firebase(DEV_FIREBASE_APP_ID, DEV_FLAVOR)
+  end
+
+  desc "Qa: Increase version, build & deploy app to Firebase Distribution"
+  lane :increase_version_build_and_up_firebase_qa do
+    increase_version_and_build_and_deploy_to_firebase(QA_FIREBASE_APP_ID, QA_FLAVOR)
+  end
+
+  desc "Staging: Increase version, build & deploy app to Firebase Distribution"
+  lane :increase_version_build_and_up_firebase_staging do
+    increase_version_and_build_and_deploy_to_firebase(STG_FIREBASE_APP_ID, STG_FLAVOR)
+  end
+
+  desc "Production: Increase version, build & deploy app to Firebase Distribution"
+  lane :increase_version_build_and_up_firebase_production do
+    increase_version_and_build_and_deploy_to_firebase(PROD_FIREBASE_APP_ID, PROD_FLAVOR)
+  end
+
+  def increase_version_and_build_and_deploy_to_firebase(app_id, flavor)
+    begin
+      # Fetch the latest release version from Firebase App Distribution
+      latest_release = firebase_app_distribution_get_latest_release(
+        app: app_id,
+        firebase_cli_token: FIREBASE_TOKEN
+      )
+
+      # Get the original build number from pubspec.yaml
+      build_number = get_build_number_of_pubspec()
+
+      # Increase the build number in pubspec.yaml
+      project_root = get_project_root_path()
+      new_build_number = latest_release.nil? ? 1 : latest_release[:buildVersion].to_i + 1
+      sh("cd ../.. && dart run #{project_root}/tools/dart_tools/lib/set_build_number_pubspec.dart #{new_build_number}")
+
+      # Build the APK file
+      build_apk(flavor)
+
+      # Revert the build number in pubspec.yaml
+      sh("cd ../.. && dart run #{project_root}/tools/dart_tools/lib/set_build_number_pubspec.dart #{build_number}")
+      
+      # Deploy to Firebase
+      changelog_path = get_changelog()
+      deploy_to_firebase(flavor, changelog_path)
+
+      # Send Slack notification
+      changelog = File.exist?(changelog_path) ? File.read(changelog_path) : "No release notes provided."
+      version = "#{get_version_name_of_pubspec()}(#{new_build_number})"
+      send_slack("#{MENTIONS_SUCCESS} *Deployed onto #{flavor} Environment. Firebase Android #{version}*\n*Release notes:* #{changelog}")
+    rescue => exception
+      error(exception)
+    end
+  end
+
+  def build_apk(flavor)
+    begin
+      if flavor == DEV_FLAVOR
+        sh("cd ../.. && make build_dev_apk")
+      elsif flavor == QA_FLAVOR
+        sh("cd ../.. && make build_qa_apk")
+      elsif flavor == STG_FLAVOR
+        sh("cd ../.. && make build_stg_apk")
+      elsif flavor == PROD_FLAVOR
+        sh("cd ../.. && make build_prod_apk")
+      else
+        raise "flavor #{flavor} is invalid"
+      end
+    rescue => exception
+      error(exception)
+    end
+  end
+
+  def deploy_to_firebase(flavor, changelog_path)
+    begin
+      app_id = get_firebase_app_id(flavor)
+      apk_path = get_apk_file_path(flavor)
+      firebase_app_distribution(
+        firebase_cli_token: FIREBASE_TOKEN,
+        app: app_id,
+        groups: get_firebase_groups(flavor),
+        android_artifact_path: apk_path,
+        release_notes_file: changelog_path
+      )
+    rescue => exception
+      error(exception)
+    end
+  end
+
+  def get_firebase_app_id(flavor)
+    case flavor
+      when DEV_FLAVOR
+        return DEV_FIREBASE_APP_ID
+      when QA_FLAVOR
+        return QA_FIREBASE_APP_ID
+      when STG_FLAVOR
+        return STG_FIREBASE_APP_ID
+      when PROD_FLAVOR
+        return PROD_FIREBASE_APP_ID
+      else
+        raise "Unknown flavor: #{flavor}"
+    end
+  end
+
+  def get_firebase_groups(flavor)
+    case flavor
+      when DEV_FLAVOR
+        return DEV_FIREBASE_GROUPS
+      when QA_FLAVOR
+        return QA_FIREBASE_GROUPS
+      when STG_FLAVOR
+        return STG_FIREBASE_GROUPS
+      when PROD_FLAVOR
+        return PROD_FIREBASE_GROUPS
+      else
+        raise "Unknown flavor: #{flavor}"
+    end
+  end
+
+  def get_apk_file_path(flavor)
+    return "../build/app/outputs/flutter-apk/app-#{flavor}-release.apk"
+  end
+
+  def get_project_root_path()
+    return File.expand_path("../..", __dir__)
+  end
+
+  def get_version_name_of_pubspec()
+    project_root = get_project_root_path()
+    pubspec_path  = File.join(project_root, "pubspec.yaml")
+    pubspec = YAML.load_file(pubspec_path)
+    return pubspec["version"].split("+").first
+  end
+
+  def get_build_number_of_pubspec()
+    project_root = get_project_root_path()
+    pubspec_path  = File.join(project_root, "pubspec.yaml")
+    pubspec = YAML.load_file(pubspec_path)
+    return pubspec["version"].split("+").last.to_i
+  end
+
+  def get_changelog()
+    project_root = get_project_root_path()
+    changelog_path  = File.join(project_root, "RELEASE_NOTES.md")
+    return changelog_path
+  end
+
+  def send_slack(message, success = true)
+    slack(
+      message: message,
+      success: success,
+      slack_url: success ? SLACK_HOOKS_URL_SUCCESS : SLACK_HOOKS_URL_ERROR,
+      link_names: true,
+      default_payloads: [:git_branch, :lane]
+    )
+  end
+
+  def error(exception)
+    send_slack("#{MENTIONS_ERROR} Build failed: #{exception.to_s}", false)
+  end
+end
